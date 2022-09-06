@@ -78,19 +78,25 @@ class Addition(MathObject):
     left: MathObject
     right: MathObject
 
-    def _simplify(self) -> MathObject:
-        a, b = self.left._simplify(), self.right._simplify()
+    def _sum_simplify(self, a: MathObject, b: MathObject) -> MathObject | None:
+        "Simplification function common to both addition and subtraction"
         if a == Constant(0):
             return b
         if b == Constant(0):
             return a
-        return Addition(a, b)
+
+    def _simplify(self) -> MathObject:
+        a, b = self.left._simplify(), self.right._simplify()
+        s = self._sum_simplify(a, b) 
+        if s is None:
+            return Addition(a, b)
+        else: return s
 
     def differentiate(self) -> "Addition":
         return Addition(self.left.differentiate(), self.right.differentiate())
 
     def _should_bracket_wrap(self, parent: Union["MathObject", None]) -> bool:
-        return parent is not None and not isinstance(parent, (Addition,))
+        return parent is not None and type(parent)  != Addition
 
     def _format(self) -> str:
         return f"{self.left.format(self)} + {self.right.format(self)}"
@@ -101,12 +107,22 @@ class Addition(MathObject):
 
 class Subtraction(Addition):
     def _simplify(self) -> MathObject:
-        if self.left == self.right:
+        a, b = self.left._simplify(), self.right._simplify()
+        if a == b:
             return Constant(0)
-        return super()._simplify()
+        s = self._sum_simplify(a, b)
+        if s is None:
+            return Subtraction(a, b)
+        else: return s
+        
+    def differentiate(self) -> "Addition":
+        return Subtraction(self.left.differentiate(), self.right.differentiate())
 
     def _format(self) -> str:
         return f"{self.left.format(self)} - {self.right.format(self)}"
+    
+    def _should_bracket_wrap(self, parent: Union["MathObject", None]) -> bool:
+        return super()._should_bracket_wrap(parent)
 
 
 @dataclass
