@@ -6,23 +6,27 @@ class Token:
         return self.__class__.__name__
 
 
-class Plus(Token):
+class OperatorToken(Token):
     pass
 
 
-class Minus(Token):
+class Plus(OperatorToken):
     pass
 
 
-class Multiply(Token):
+class Minus(OperatorToken):
     pass
 
 
-class Divide(Token):
+class Multiply(OperatorToken):
     pass
 
 
-class Exponent(Token):
+class Divide(OperatorToken):
+    pass
+
+
+class Exponent(OperatorToken):
     pass
 
 
@@ -82,7 +86,24 @@ class Scanner:
         while not self.is_at_end:
             self._start = self._current
             self.scan_token()
-        return self._tokens
+
+        prev = None
+        tokens: list[Token] = []
+        for token in self._tokens:
+            match (prev, token):
+                case (Numeric(), Char()) | (
+                    Numeric() | Char(),
+                    OpenBracket(),
+                ) | (CloseBracket(), Char()) | (
+                    CloseBracket(),
+                    OpenBracket(),
+                ):
+                    tokens.append(Multiply())
+                case _:
+                    pass
+            tokens.append(token)
+            prev = token
+        return tokens
 
     def scan_token(self):
         c = self.advance()
@@ -101,13 +122,13 @@ class Scanner:
                 self.add_token(Divide())
             case "^":
                 self.add_token(Exponent())
-            case _ if c.isnumeric():
+            case k if k.isnumeric():
                 self.number()
-            case _ if c.isalpha():
+            case k if k.isalpha():
                 self.char()
             case k if k.isspace():
                 pass
-            case _:
+            case c:
                 print(f"Unknown character {c}")
 
     def char(self) -> None:
@@ -122,7 +143,8 @@ class Scanner:
         self._tokens.append(token)
 
 
-while True:
-    s = input("> ")
-    scanner = Scanner(s)
-    print(scanner.scan_tokens())
+if __name__ == "__main__":
+    while True:
+        s = input("> ")
+        scanner = Scanner(s)
+        print(scanner.scan_tokens())

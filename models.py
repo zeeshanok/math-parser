@@ -1,6 +1,18 @@
 from dataclasses import dataclass
 from typing import Union
 
+SUPERSCRIPTS = {
+    '0': '⁰',
+    '1': '¹',
+    '2': '²',
+    '3': '³',
+    '4': '⁴',
+    '5': '⁵',
+    '6': '⁶',
+    '7': '⁷',
+    '8': '⁸',
+    '9': '⁹',
+}
 
 def bracket_wrap(s: str):
     return f"({s})"
@@ -20,7 +32,17 @@ class MathObject:
     def differentiate(self) -> "MathObject":
         raise NotImplementedError()
 
+    def _format(self) -> str:
+        raise NotImplementedError()
+
     def format(self, parent: Union["MathObject", None] = None) -> str:
+        s = self._format()
+        return bracket_wrap(s) if self._should_bracket_wrap(parent) else s
+
+    def _should_bracket_wrap(self, parent: Union["MathObject", None]) -> bool:
+        return False
+    
+    def _contains_unknown(self) -> bool:
         raise NotImplementedError()
 
 
@@ -31,155 +53,148 @@ class Constant(MathObject):
     def differentiate(self) -> MathObject:
         return Constant(0)
 
-    def format(self, parent: MathObject | None = None) -> str:
+    def _format(self) -> str:
         return f"{self.num:g}"
+    
+    def _contains_unknown(self) -> bool:
+        return False
 
 
 @dataclass
 class Unknown(MathObject):
-    term: str = "x"
+    char: str = "x"
 
     def differentiate(self) -> MathObject:
         return Constant(1)
 
-    def format(self, parent: MathObject | None = None) -> str:
-        return f"{self.term}"
-
+    def _format(self) -> str:
+        return self.char
+    
+    def _contains_unknown(self) -> bool:
+        return True
 
 @dataclass
-class Sum(MathObject):
-    terms: list[MathObject]
+class Addition(MathObject):
+    left: MathObject
+    right: MathObject
 
-    def _simplify(self) -> "Sum":
-        return Sum([t._simplify() for t in self.terms if t != Constant(0)])
+    def _simplify(self) -> MathObject:
+        a, b = self.left._simplify(), self.right._simplify()
+        if a == Constant(0):
+            return b
+        if b == Constant(0):
+            return a
+        return Addition(a, b)
 
-    def differentiate(self) -> "Sum":
-        return Sum([t.differentiate() for t in self.terms])
+    def differentiate(self) -> "Addition":
+        return Addition(self.left.differentiate(), self.right.differentiate())
 
-    def format(self, parent: MathObject | None = None) -> str:
-        s = " + ".join(i.format(self) for i in self.terms)
-        return (
-            bracket_wrap(s)
-            if parent is not None and not isinstance(parent, (Sum, Quotient))
-            else s
-        )
+    def _should_bracket_wrap(self, parent: Union["MathObject", None]) -> bool:
+        return parent is not None and not isinstance(parent, (Addition,))
+
+    def _format(self) -> str:
+        return f"{self.left.format(self)} + {self.right.format(self)}"
+    
+    def _contains_unknown(self) -> bool:
+        return self.left._contains_unknown() or self.right._contains_unknown()
+
+
+class Subtraction(Addition):
+    def _simplify(self) -> MathObject:
+        if self.left == self.right:
+            return Constant(0)
+        return super()._simplify()
+
+    def _format(self) -> str:
+        return f"{self.left.format(self)} - {self.right.format(self)}"
 
 
 @dataclass
 class Product(MathObject):
-    terms: list[MathObject]
+
+    left: MathObject
+    right: MathObject
 
     def _simplify(self) -> MathObject:
-        p = [t._simplify() for t in self.terms if t != Constant(1)]
-        return Constant(0) if any(i == Constant(0) for i in p) else Product(p)
+        a, b = self.left._simplify(), self.right._simplify()
+        if a == Constant(0) or b == Constant(0):
+            return Constant(0)
+        if a == Constant(1):
+            return b
+        if b == Constant(1):
+            return a
 
-    def differentiate(self) -> Sum:
-        return Sum(
-            [
-                Product(
-                    [
-                        *self.terms[:i],
-                        self.terms[i].differentiate(),
-                        *self.terms[i + 1 :],
-                    ]
-                )
-                for i in range(len(self.terms))
-            ]
+        return Product(a, b)
+
+    def differentiate(self) -> Addition:
+        return Addition(
+            Product(self.left.differentiate(), self.right),
+            Product(self.left, self.right.differentiate()),
         )
 
-    def format(self, parent: MathObject | None = None) -> str:
-        s = "•".join(i.format(self) for i in self.terms)
+    def _should_bracket_wrap(self, parent: Union["MathObject", None]) -> bool:
+        return parent is not None and not isinstance(parent, (Addition, Product))
 
-        return (
-            bracket_wrap(s) if parent is not None and not isinstance(parent, Sum) else s
-        )
+    def _format(self, parent: MathObject | None = None) -> str:
+        return f"{self.left.format(self)}•{self.right.format(self)}"
 
-
-@dataclass
-class Power(MathObject):
-    child: MathObject
-    power: float
-
-    def _simplify(self) -> MathObject:
-        return (
-            self.child._simplify()
-            if self.power == 1
-            else Power(self.child._simplify(), self.power)
-        )
-
-    def differentiate(self) -> Product:
-        return Product(
-            [
-                Constant(self.power),
-                Power(self.child, self.power - 1),
-                self.child.differentiate(),
-            ]
-        )
-
-    def format(self, parent: MathObject | None = None) -> str:
-        return f"{self.child.format(self)}^{self.power:g}"
-
+    def _contains_unknown(self) -> bool:
+        return self.left._contains_unknown() or self.right._contains_unknown()
 
 @dataclass
 class Quotient(MathObject):
     numer: MathObject
     denom: MathObject
 
-    def _simplify(self) -> "Quotient":
+    def _simplify(self) -> MathObject:
+        if self.numer == self.denom:
+            return Constant(1)
         return Quotient(self.numer._simplify(), self.denom._simplify())
 
     def differentiate(self) -> "Quotient":
         return Quotient(
-            Sum(
-                [
-                    Product([self.denom, self.numer.differentiate()]),
-                    Product([Constant(-1), self.numer, self.denom.differentiate()]),
-                ]
+            Subtraction(
+                Product(self.denom, self.numer.differentiate()),
+                Product(self.numer, self.denom.differentiate()),
             ),
-            Power(self.denom, 2),
+            Power(self.denom, Constant(2)),
         )
 
-    def format(self, parent: Union["MathObject", None] = None) -> str:
-        return f"({self.numer.format(self)}) / ({self.denom.format(self)})"
+    def _format(self, parent: Union["MathObject", None] = None) -> str:
+        return f"{self.numer.format(self)} / {self.denom.format(self)}"
+
+    def _should_bracket_wrap(self, parent: Union["MathObject", None]) -> bool:
+        return isinstance(parent, (Product, Power))
 
 
 @dataclass
-class Equation:
-    lhs: MathObject
-    rhs: MathObject
+class Power(MathObject):
+    child: MathObject
+    power: MathObject
 
-    def __str__(self) -> str:
-        return f"{self.lhs} = {self.rhs}"
+    def _simplify(self) -> MathObject:
+        return (
+            self.child._simplify()
+            if self.power == Constant(1)
+            else Power(self.child._simplify(), self.power)
+        )
+
+    def differentiate(self) -> MathObject:
+        match self:
+            case Power(Constant(), Constant()):
+                return Constant(0)
+            case Power(x, Constant(n)):
+                return Product(Product(Constant(n), Power(x, Constant(n-1))), x.differentiate())
+            case _:
+                raise NotImplementedError()
+
+    def _format(self, parent: MathObject | None = None) -> str:
+        p = f"^{self.power.format(self)}"
+        if isinstance(self.power, Constant) and int(self.power.num) == self.power.num:
+            s = str(int(self.power.num))
+            p = s.translate(s.maketrans(SUPERSCRIPTS))
+        return f"{self.child.format(self)}{p}"
 
 
-#     Power(
-#         Product(
-#             [
-#                 Constant(5),
-#                 Unknown(),
-#             ]
-#         ),
-#         4,
-#     ).format()
-# )
-
-e = Power(
-    Sum(
-        [Power(Unknown(), 5), Power(Unknown(), 12), Constant(8)],
-    ),
-    2,
-)
-print(e.format())
-print(e.differentiate().simplify().format())
-
-k = Quotient(
-    Sum([Unknown(), Constant(1)]),
-    Sum(
-        [
-            Product([Constant(2), Unknown()]),
-            Constant(4),
-        ],
-    ),
-)
-print(k.format())
-print(k.differentiate().simplify().format())
+if __name__ == "__main__":
+    pass
