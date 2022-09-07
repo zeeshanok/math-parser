@@ -3,7 +3,7 @@ from typing import Type
 from models import (
     Addition,
     Constant,
-    MathObject,
+    MathExpression,
     Power,
     Product,
     Quotient,
@@ -32,8 +32,8 @@ from scan import (
 
 
 def build_binary_math_object(
-    left: MathObject, operator: Token, right: MathObject
-) -> MathObject:
+    left: MathExpression, operator: Token, right: MathExpression
+) -> MathExpression:
     match operator:
         case Plus():
             return Addition(left, right)
@@ -79,10 +79,10 @@ class Parser:
             return True
         return False
 
-    def expression(self) -> MathObject:
+    def expression(self) -> MathExpression:
         return self.term()
 
-    def term(self) -> MathObject:
+    def term(self) -> MathExpression:
         expr = self.factor()
         while self.match(Plus, Minus):
             operator = self.previous()
@@ -91,7 +91,7 @@ class Parser:
 
         return expr
 
-    def factor(self) -> MathObject:
+    def factor(self) -> MathExpression:
         expr = self.exponent()
         while self.match(Multiply, Divide):
             operator = self.previous()
@@ -100,7 +100,7 @@ class Parser:
 
         return expr
 
-    def exponent(self) -> MathObject:
+    def exponent(self) -> MathExpression:
         left = self.primary()
         while self.match(Exponent):
             right = self.exponent()
@@ -108,7 +108,7 @@ class Parser:
         
         return left
 
-    def primary(self) -> MathObject:
+    def primary(self) -> MathExpression:
         if self.match(Numeric):
             p = self.previous()
             assert isinstance(p, Numeric)
